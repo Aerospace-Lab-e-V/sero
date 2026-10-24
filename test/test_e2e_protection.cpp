@@ -18,25 +18,54 @@ using Addr = Address<SmallConfig>;
 
 TEST(E2EProtection_NextSequence, InitialValue_IsZero) {
     E2E e2e;
-    EXPECT_EQ(e2e.next_sequence(), 0);
+    EXPECT_EQ(e2e.next_sequence(make_addr(1)), 0);
 }
 
 TEST(E2EProtection_NextSequence, IncrementsSequentially) {
     E2E e2e;
-    EXPECT_EQ(e2e.next_sequence(), 0);
-    EXPECT_EQ(e2e.next_sequence(), 1);
-    EXPECT_EQ(e2e.next_sequence(), 2);
+    auto dest = make_addr(1);
+    EXPECT_EQ(e2e.next_sequence(dest), 0);
+    EXPECT_EQ(e2e.next_sequence(dest), 1);
+    EXPECT_EQ(e2e.next_sequence(dest), 2);
 }
 
 TEST(E2EProtection_NextSequence, WrapsAt255ToZero) {
     E2E e2e;
+    auto dest = make_addr(1);
     // Advance to 255
     for (int i = 0; i < 255; ++i) {
-        e2e.next_sequence();
+        e2e.next_sequence(dest);
     }
-    EXPECT_EQ(e2e.next_sequence(), 255);
-    EXPECT_EQ(e2e.next_sequence(), 0); // wraps
-    EXPECT_EQ(e2e.next_sequence(), 1);
+    EXPECT_EQ(e2e.next_sequence(dest), 255);
+    EXPECT_EQ(e2e.next_sequence(dest), 0); // wraps
+    EXPECT_EQ(e2e.next_sequence(dest), 1);
+}
+
+TEST(E2EProtection_NextSequence, IndependentPerDestination) {
+    E2E e2e;
+    auto a = make_addr(1);
+    auto b = make_addr(2);
+    EXPECT_EQ(e2e.next_sequence(a), 0);
+    EXPECT_EQ(e2e.next_sequence(a), 1);
+    EXPECT_EQ(e2e.next_sequence(a), 2);
+    EXPECT_EQ(e2e.next_sequence(b), 0); // not advanced by traffic to a
+    EXPECT_EQ(e2e.next_sequence(a), 3);
+    EXPECT_EQ(e2e.next_sequence(b), 1);
+}
+
+TEST(E2EProtection_NextSequence, TableFull_UntrackedDestinationsShareCounter) {
+    E2E e2e;
+    // Fill the per-destination table
+    for (std::size_t i = 0; i < SmallConfig::MaxTrackedPeers; ++i) {
+        e2e.next_sequence(make_addr(static_cast<uint8_t>(i + 1)));
+    }
+    auto x = make_addr(100);
+    auto y = make_addr(101);
+    EXPECT_EQ(e2e.next_sequence(x), 0);
+    EXPECT_EQ(e2e.next_sequence(y), 1);
+    EXPECT_EQ(e2e.next_sequence(x), 2);
+    // Tracked destinations keep their own counter
+    EXPECT_EQ(e2e.next_sequence(make_addr(1)), 1);
 }
 
 // ── validate_sequence ───────────────────────────────────────────

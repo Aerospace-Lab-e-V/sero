@@ -81,7 +81,7 @@ With authentication (`AUTH` flag set):
 | 4 | 2 | **Service ID** | Target service. `0xFFFF` = Service Discovery. |
 | 6 | 2 | **Method/Event ID** | Bit 15 = type discriminator: `0` = method, `1` = event. |
 | 8 | 2 | **Client ID** | Sender's Client ID in requests/SD. Echoed in responses. `0x0000` in notifications. |
-| 10 | 1 | **Sequence Counter** | Per-device monotonic counter, wraps at `0xFF`. |
+| 10 | 1 | **Sequence Counter** | Per-destination monotonic counter, wraps at `0xFF`. |
 | 11 | 1 | **Reserved** | `0x00`. |
 | 12 | 4 | **Request ID** | Correlation ID. Echoed in responses. `0x00000000` in notifications. |
 | 16 | 4 | **Payload Length** | Byte count of payload only (excludes HMAC and CRC trailers). MUST NOT exceed `MaxPayloadSize`. |
@@ -359,7 +359,7 @@ Sent via unicast to each subscribed consumer.
 
 ### 7.2 Sequence Counter
 
-Each device maintains a single 8-bit outgoing counter, incremented per message sent, wrapping `0xFF` → `0x00`.
+Each device maintains an 8-bit outgoing counter **per destination transport address**, incremented per unicast message sent to that destination, wrapping `0xFF` → `0x00`. A single shared counter would advance by the traffic sent to other peers, so a receiver would see gaps larger than `SeqCounterAcceptWindow` and drop valid messages as stale. Destinations beyond `MaxTrackedPeers` share one fallback counter. SD messages use a separate counter and are not sequence-validated.
 
 Receivers track last-seen counter **per source transport address** (not Client ID), bounded by `MaxTrackedPeers`.
 

@@ -599,6 +599,58 @@ TEST_F(RuntimeTest, StaleSequence_WithoutSdFind_IsRejected) {
     EXPECT_EQ(rt->diagnostics().get(DiagnosticCounter::StaleMessages), 1u);
 }
 
+// ── Multi-peer sender keeps each receiver's sequence contiguous (§7.2) ──
+
+// Regression: a consumer talking to several providers (e.g. a headunit) used
+// one shared tx counter.  Traffic to provider A advanced the counter seen by
+// provider B, so after more than SeqCounterAcceptWindow messages to A, B
+// dropped the next request as Stale and the consumer timed out (E_TIMEOUT).
+TEST_F(RuntimeTest, MultiPeerSender_TrafficToOtherPeer_DoesNotStaleRequest) {
+    const Addr consumer_addr = make_addr(1);
+    const Addr provider_a    = make_addr(20);
+    const Addr provider_b    = make_addr(30);
+
+    (void)rt->find_service(0x1000, 1, 0);
+    (void)rt->find_service(0x2000, 1, 0);
+    rt->service_discovery().handle_offer(0x1000, 1, 30, 0x0001, provider_a, 0);
+    rt->service_discovery().handle_offer(0x2000, 1, 30, 0x0001, provider_b, 0);
+
+    MockTransport b_transport;
+    RT b_rt(b_transport, /*client_id=*/0x0003);
+    StubService b_svc;
+    (void)b_rt.register_service(0x2000, b_svc, 1, 0);
+
+    auto deliver_to_b = [&] {
+        for (auto& msg : transport.sent) {
+            if (msg.destination == provider_b) {
+                b_transport.receive_queue.push_back({consumer_addr, msg.data});
+            }
+        }
+        transport.sent.clear();
+        b_rt.process(0);
+    };
+
+    // B sees the consumer once, establishing last_seen.
+    ASSERT_TRUE(rt->fire_and_forget(0x2000, 0x0001, nullptr, 0));
+    deliver_to_b();
+    ASSERT_EQ(b_svc.last_method_id, 0x0001);
+
+    // Lots of traffic to A that B never sees.
+    for (int i = 0; i < SmallConfig::SeqCounterAcceptWindow + 5; ++i) {
+        ASSERT_TRUE(rt->fire_and_forget(0x1000, 0x0001, nullptr, 0));
+    }
+
+    // The next request to B must still be accepted.
+    auto rid = rt->request(0x2000, 0x00FF, nullptr, 0,
+                           [](ReturnCode, const uint8_t*, std::size_t, void*) {},
+                           nullptr, 500, 0);
+    ASSERT_TRUE(rid.has_value());
+    deliver_to_b();
+
+    EXPECT_EQ(b_svc.last_method_id, 0x00FF);
+    EXPECT_EQ(b_rt.diagnostics().get(DiagnosticCounter::StaleMessages), 0u);
+}
+
 // ── Request timeout eviction ────────────────────────────────────
 
 TEST_F(RuntimeTest, RequestTimeout_EvictsAndCallsCallback) {

@@ -209,7 +209,7 @@ public:
         hdr.service_id       = service_id;
         hdr.method_event_id  = method_id;
         hdr.client_id        = client_id_;
-        hdr.sequence_counter = e2e_.next_sequence();
+        hdr.sequence_counter = e2e_.next_sequence(provider);
         hdr.request_id       = REQUEST_ID_NONE;
         hdr.payload_length   = static_cast<uint32_t>(payload_length);
 
@@ -267,7 +267,7 @@ public:
                 hdr.service_id       = service_id;
                 hdr.method_event_id  = event_id;
                 hdr.client_id        = CLIENT_ID_PROVIDER;
-                hdr.sequence_counter = e2e_.next_sequence();
+                hdr.sequence_counter = e2e_.next_sequence(dest);
                 hdr.request_id       = REQUEST_ID_NONE;
                 hdr.payload_length   = static_cast<uint32_t>(payload_length);
 
@@ -601,7 +601,7 @@ private:
         resp_hdr.service_id       = hdr.service_id;
         resp_hdr.method_event_id  = hdr.method_event_id;
         resp_hdr.client_id        = hdr.client_id;
-        resp_hdr.sequence_counter = e2e_.next_sequence();
+        resp_hdr.sequence_counter = e2e_.next_sequence(source);
         resp_hdr.request_id       = hdr.request_id;
         resp_hdr.payload_length   = is_error ? 0 : static_cast<uint32_t>(response_length);
 
@@ -842,7 +842,7 @@ private:
         bool auth = should_auth_outgoing(target);
         MessageHeader hdr = make_request_header(service_id, method_id,
                                                  payload_length, *rid, auth);
-        hdr.sequence_counter = e2e_.next_sequence();
+        hdr.sequence_counter = e2e_.next_sequence(target);
         std::size_t total = build_message(hdr, payload, payload_length, auth, target);
         if (!transport_.send(target, tx_buffer_, total)) {
             request_tracker_.complete(*rid, ReturnCode::E_NOT_OK, nullptr, 0);
@@ -920,7 +920,7 @@ private:
         if (sd_len + CRC_SIZE > MAX_MSG_SIZE) return;
         std::memcpy(tx_buffer_, sd_msg, sd_len);
         // Use a dedicated SD sequence counter so SD broadcasts do NOT advance
-        // the shared unicast tx_seq_.  This prevents gaps in the per-peer
+        // the per-destination unicast counters.  This prevents gaps in the per-peer
         // sequence state on the receiver when multicast packets are lost.
         tx_buffer_[10] = sd_seq_++;
         crc16_append(tx_buffer_, sd_len);
