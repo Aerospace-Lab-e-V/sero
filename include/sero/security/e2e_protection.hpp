@@ -29,11 +29,27 @@ public:
 
     void set_logger(Logger<Config>* logger) { logger_ = logger; }
 
-    /// Get the next outgoing sequence number and increment.
-    uint8_t next_sequence() {
-        uint8_t seq = tx_seq_;
-        ++tx_seq_; // wraps at 0xFF→0x00
-        return seq;
+    /// Get the next outgoing sequence number for `dest` and increment.
+    /// Receivers validate per source address, so each destination gets its
+    /// own counter; a shared one would skip ahead by the traffic sent to
+    /// other peers and be rejected as Stale.
+    uint8_t next_sequence(const Addr& dest) {
+        for (std::size_t i = 0; i < tx_peer_count_; ++i) {
+            if (tx_peers_[i].address == dest) {
+                return tx_peers_[i].next_seq++; // wraps at 0xFF→0x00
+            }
+        }
+
+        // New destination
+        if (tx_peer_count_ < Config::MaxTrackedPeers) {
+            tx_peers_[tx_peer_count_].address  = dest;
+            tx_peers_[tx_peer_count_].next_seq = 1;
+            ++tx_peer_count_;
+            return 0;
+        }
+
+        // Table full — untracked destinations share one counter.
+        return tx_seq_++;
     }
 
     /// Reset tracking state for a peer (e.g. after reboot detection).
@@ -98,8 +114,15 @@ private:
         uint8_t last_seen = 0;
     };
 
+    struct TxPeerEntry {
+        Addr    address{};
+        uint8_t next_seq = 0;
+    };
+
     std::array<PeerEntry, Config::MaxTrackedPeers> peers_{};
     std::size_t peer_count_ = 0;
+    std::array<TxPeerEntry, Config::MaxTrackedPeers> tx_peers_{};
+    std::size_t tx_peer_count_ = 0;
     uint8_t     tx_seq_     = 0;
     Logger<Config>* logger_ = nullptr;
 };

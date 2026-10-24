@@ -435,7 +435,7 @@ rt.register_service(service_id, svc, major, minor, /*auth_required=*/true);
 
 ### Sequence Counter
 
-Per-device monotonic counter with a configurable acceptance window (`SeqCounterAcceptWindow`) to detect duplicate and stale messages.
+Per-destination monotonic counter with a configurable acceptance window (`SeqCounterAcceptWindow`) to detect duplicate and stale messages.
 
 ---
 
